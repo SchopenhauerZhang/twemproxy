@@ -21,7 +21,6 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/epoll.h>
 #include <netinet/in.h>
 
 #include <nc_core.h>
@@ -777,13 +776,13 @@ stats_loop(void *arg)
     int n;
 
     for (;;) {
-        n = epoll_wait(st->ep, &st->event, 1, st->interval);
+        n = event_wait(st->center, st->interval);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            log_error("epoll wait on e %d with event m %d failed: %s",
-                      st->ep, st->sd, strerror(errno));
+            log_error("event wait on e %d with event m %d failed: %s",
+                      st->center->ep, st->sd, strerror(errno));
             break;
         }
 
@@ -847,7 +846,7 @@ static rstatus_t
 stats_start_aggregator(struct stats *st)
 {
     rstatus_t status;
-    struct epoll_event ev;
+    struct evcenter *center;
 
     if (!stats_enabled) {
         return NC_OK;
@@ -858,21 +857,20 @@ stats_start_aggregator(struct stats *st)
         return status;
     }
 
-    st->ep = epoll_create(10);
-    if (st->ep < 0) {
-        log_error("epoll create failed: %s", strerror(errno));
+    center = event_init(10);
+    if (center == NULL) {
+        log_error("event create failed: %s", strerror(errno));
         return NC_ERROR;
     }
 
-    ev.data.fd = st->sd;
-    ev.events = EPOLLIN;
-
-    status = epoll_ctl(st->ep, EPOLL_CTL_ADD, st->sd, &ev);
+    status = event_add_raw(center->ep, st->sd, EVENT_READABLE, NULL);
     if (status < 0) {
-        log_error("epoll ctl on e %d sd %d failed: %s", st->ep, st->sd,
-                  strerror(errno));
+        log_error("event add conn e %d s %d for failed: %s",
+                  center->ep, st->sd, strerror(errno));
         return NC_ERROR;
     }
+
+    st->center = center;
 
     status = pthread_create(&st->tid, NULL, stats_loop, st);
     if (status < 0) {
@@ -891,7 +889,7 @@ stats_stop_aggregator(struct stats *st)
     }
 
     close(st->sd);
-    close(st->ep);
+    event_deinit(st->center);
 }
 
 struct stats *
@@ -921,7 +919,6 @@ stats_create(uint16_t stats_port, char *stats_ip, int stats_interval,
     array_null(&st->sum);
 
     st->tid = (pthread_t) -1;
-    st->ep = -1;
     st->sd = -1;
 
     string_set_text(&st->service_str, "service");

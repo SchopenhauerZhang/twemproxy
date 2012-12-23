@@ -67,7 +67,111 @@ AC_CHECK_HEADERS([fcntl.h float.h limits.h stddef.h stdlib.h string.h unistd.h])
 AC_CHECK_HEADERS([inttypes.h stdint.h])
 AC_CHECK_HEADERS([sys/ioctl.h sys/time.h sys/uio.h])
 AC_CHECK_HEADERS([sys/socket.h sys/un.h netinet/in.h arpa/inet.h netdb.h])
-AC_CHECK_HEADERS([sys/epoll.h], [], [AC_MSG_ERROR([required sys/epoll.h header file is missing])])
+AC_CHECK_HEADER([sys/epoll.h], AC_DEFINE([HAVE_EPOLL], , [for epoll support])) 
+AC_CHECK_HEADER([sys/event.h], AC_DEFINE([HAVE_KQUEUE], , [for kqueue support])) 
+
+haveepollsyscall=no
+haveepoll=no
+AC_CHECK_FUNCS(epoll_ctl, [haveepoll=yes], )
+if test "x$haveepoll" = "xyes" ; then
+	AC_DEFINE(HAVE_EPOLL, 1,
+		[Define if your system supports the epoll system calls])
+	needsignal=yes
+fi
+if test "x$ac_cv_header_sys_epoll_h" = "xyes"; then
+	if test "x$haveepoll" = "xno" ; then
+		AC_MSG_CHECKING(for epoll system call)
+		AC_TRY_RUN(
+#include <stdint.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <sys/epoll.h>
+#include <unistd.h>
+
+int
+epoll_create(int size)
+{
+	return (syscall(__NR_epoll_create, size));
+}
+
+int
+main(int argc, char **argv)
+{
+	int epfd;
+
+	epfd = epoll_create(256);
+	exit (epfd == -1 ? 1 : 0);
+}, [AC_MSG_RESULT(yes)
+    AC_DEFINE(HAVE_EPOLL, 1,
+	[Define if your system supports the epoll system calls])
+    needsignal=yes
+    have_epoll=yes
+    AC_LIBOBJ(epoll_sub)
+    ], AC_MSG_RESULT(no), AC_MSG_RESULT(no))
+	fi
+fi
+AM_CONDITIONAL(EPOLL_BACKEND, [test "x$haveepoll" = "xyes"])
+
+havekqueue=no
+if test "x$ac_cv_header_sys_event_h" = "xyes"; then
+	AC_CHECK_FUNCS(kqueue, [havekqueue=yes], )
+	if test "x$havekqueue" = "xyes" ; then
+		AC_MSG_CHECKING(for working kqueue)
+		AC_TRY_RUN(
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/event.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+int
+main(int argc, char **argv)
+{
+	int kq;
+	int n;
+	int fd[[2]];
+	struct kevent ev;
+	struct timespec ts;
+	char buf[[8000]];
+
+	if (pipe(fd) == -1)
+		exit(1);
+	if (fcntl(fd[[1]], F_SETFL, O_NONBLOCK) == -1)
+		exit(1);
+
+	while ((n = write(fd[[1]], buf, sizeof(buf))) == sizeof(buf))
+		;
+
+        if ((kq = kqueue()) == -1)
+		exit(1);
+
+	memset(&ev, 0, sizeof(ev));
+	ev.ident = fd[[1]];
+	ev.filter = EVFILT_WRITE;
+	ev.flags = EV_ADD | EV_ENABLE;
+	n = kevent(kq, &ev, 1, NULL, 0, NULL);
+	if (n == -1)
+		exit(1);
+
+	read(fd[[0]], buf, sizeof(buf));
+
+	ts.tv_sec = 0;
+	ts.tv_nsec = 0;
+	n = kevent(kq, NULL, 0, &ev, 1, &ts);
+	if (n == -1 || n == 0)
+		exit(1);
+
+	exit(0);
+}, [AC_MSG_RESULT(yes)
+    AC_DEFINE(HAVE_WORKING_KQUEUE, 1,
+		[Define if kqueue works correctly with pipes])
+    havekqueue=yes
+    ], AC_MSG_RESULT(no), AC_MSG_RESULT(no))
+	fi
+fi
+AM_CONDITIONAL(KQUEUE_BACKEND, [test "x$havekqueue" = "xyes"])
 
 # Checks for libraries
 AC_CHECK_LIB([m], [pow])
@@ -81,26 +185,6 @@ AC_CHECK_FUNCS([dup2 gethostname gettimeofday strerror])
 AC_CHECK_FUNCS([socket])
 AC_CHECK_FUNCS([memchr memmove memset])
 AC_CHECK_FUNCS([strchr strndup strtoul])
-
-AC_CACHE_CHECK([if epoll works], [ac_cv_epoll_works],
-  AC_TRY_RUN([
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/epoll.h>
-int
-main(int argc, char **argv)
-{
-    int fd;
-
-    fd = epoll_create(256);
-    if (fd < 0) {
-        perror("epoll_create:");
-        exit(1);
-    }
-    exit(0);
-}
-  ], [ac_cv_epoll_works=yes], [ac_cv_epoll_works=no]))
-AS_IF([test "x$ac_cv_epoll_works" = "xyes"], [], [AC_MSG_FAILURE([Linux epoll(7) API is missing])])
 
 # Package options
 AC_MSG_CHECKING([whether to enable debug logs and asserts])

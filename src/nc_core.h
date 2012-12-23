@@ -94,19 +94,18 @@ struct instance;
 #include <nc_mbuf.h>
 #include <nc_message.h>
 #include <nc_connection.h>
+#include <nc_event.h>
 
 struct context {
-    uint32_t           id;          /* unique context id */
-    struct conf        *cf;         /* configuration */
-    struct stats       *stats;      /* stats */
+    uint32_t           id;            /* unique context id */
+    struct conf        *cf;           /* configuration */
+    struct stats       *stats;        /* stats */
 
-    struct array       pool;        /* server_pool[] */
+    struct array       pool;          /* server_pool[] */
 
-    int                ep;          /* epoll device */
-    int                nevent;      /* # epoll event */
-    int                max_timeout; /* epoll wait max timeout in msec */
-    int                timeout;     /* epoll wait timeout in msec */
-    struct epoll_event *event;      /* epoll event */
+    int                max_timeout;   /* epoll wait max timeout in msec */
+    int                timeout;       /* epoll wait timeout in msec */
+    struct evcenter    *center;
 };
 
 struct instance {

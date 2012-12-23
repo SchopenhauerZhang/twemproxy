@@ -18,8 +18,6 @@
 #ifndef _NC_STATS_H_
 #define _NC_STATS_H_
 
-#include <sys/epoll.h>
-
 #include <nc_core.h>
 
 #define STATS_POOL_CODEC(ACTION)                                                                            \
@@ -101,8 +99,7 @@ struct stats {
 
     pthread_t           tid;            /* stats aggregator thread */
     int                 sd;             /* stats descriptor */
-    int                 ep;             /* epoll device */
-    struct epoll_event  event;          /* epoll event */
+    struct evcenter     *center;
 
     struct string       service_str;    /* service string */
     struct string       service;        /* service */

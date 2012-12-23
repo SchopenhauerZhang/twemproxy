@@ -29,7 +29,6 @@ nutcracker_SOURCES =			\
 	nc_request.c			\
 	nc_response.c			\
 	nc_mbuf.c nc_mbuf.h		\
-	nc_event.c nc_event.h		\
 	nc_conf.c nc_conf.h		\
 	nc_stats.c nc_stats.h		\
 	nc_signal.c nc_signal.h		\
@@ -41,6 +40,14 @@ nutcracker_SOURCES =			\
 	nc_queue.h			\
 	nc.c
 
+if KQUEUE_BACKEND
+nutcracker_SOURCES += nc_kqueue.c
+endif
+if EPOLL_BACKEND
+nutcracker_SOURCES += nc_epoll.c
+endif
+
 nutcracker_LDADD = $(top_builddir)/src/hashkit/libhashkit.a
 nutcracker_LDADD += $(top_builddir)/src/proto/libproto.a
 nutcracker_LDADD += $(top_builddir)/contrib/yaml-0.1.4/src/.libs/libyaml.a
+CFLAGS = -g -O0

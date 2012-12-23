@@ -176,24 +176,36 @@ event_del_conn(int ep, struct conn *c)
 }
 
 int
-event_wait(int ep, struct epoll_event *event, int nevent, int timeout)
+event_wait(struct context *ctx)
 {
-    int nsd;
+    int nsd, numevents, j;
 
     ASSERT(ep > 0);
     ASSERT(event != NULL);
     ASSERT(nevent > 0);
 
     for (;;) {
-        nsd = epoll_wait(ep, event, nevent, timeout);
+        nsd = epoll_wait(ctx->ep, ctx->event, ctx->nevent, ctx->timeout);
         if (nsd > 0) {
-            return nsd;
+            numevents = nsd;
+            for (j = 0; j < numevents; j++) {
+                int mask = 0;
+                struct epoll_event *e = ctx->event+j;
+
+                if (e->events & EPOLLIN) mask |= EVENT_READABLE;
+                if (e->events & EPOLLOUT) mask |= EVENT_WRITABLE;
+                if (e->events & EPOLLERR) mask |= EVENT_WRITABLE;
+                if (e->events & EPOLLHUP) mask |= EVENT_WRITABLE;
+                ctx->fired_events[j].ptr = e->data.ptr;
+                ctx->fired_events[j].mask = mask;
+            }
+
         }
 
         if (nsd == 0) {
-            if (timeout == -1) {
+            if (ctx->timeout == -1) {
                log_error("epoll wait on e %d with %d events and %d timeout "
-                         "returned no events", ep, nevent, timeout);
+                         "returned no events", ctx->ep, ctx->nevent, ctx->timeout);
                 return -1;
             }
 
@@ -204,7 +216,7 @@ event_wait(int ep, struct epoll_event *event, int nevent, int timeout)
             continue;
         }
 
-        log_error("epoll wait on e %d with %d events failed: %s", ep, nevent,
+        log_error("epoll wait on e %d with %d events failed: %s", ctx->ep, ctx->nevent,
                   strerror(errno));
 
         return -1;

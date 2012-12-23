@@ -26,14 +26,33 @@
  */
 #define EVENT_SIZE_HINT 1024
 
-int event_init(struct context *ctx, int size);
-void event_deinit(struct context *ctx);
+#define EVENT_NONE 0
+#define EVENT_READABLE 1
+#define EVENT_WRITABLE 2
+
+struct fired_event {
+    int mask;
+    void *ptr;
+    int fd;
+};
+
+struct evcenter {
+    int                ep;            /* epoll device */
+    int                nevent;        /* # epoll event */
+    struct fired_event *fired_events; /* epoll event */
+    void               *event;
+};
+
+struct evcenter * event_init(int size);
+void event_deinit(struct evcenter *center);
 
 int event_add_out(int ep, struct conn *c);
 int event_del_out(int ep, struct conn *c);
 int event_add_conn(int ep, struct conn *c);
 int event_del_conn(int ep, struct conn *c);
+int event_add_raw(int ep, int fd, int mask, void *data);
+int event_del_raw(int ep, int fd, int mask, void *data);
 
-int event_wait(int ep, struct epoll_event *event, int nevent, int timeout);
+int event_wait(struct evcenter *center, int timeout);
 
 #endif
