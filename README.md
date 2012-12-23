@@ -1,3 +1,8 @@
+Forked from [twitter/twemproxy](https://github.com/twitter/twemproxy)
+
+# Update
+Add kqueue support and abstract multi-io interface.
+
 # twemproxy (nutcracker) [![Build Status](https://secure.travis-ci.org/twitter/twemproxy.png)](http://travis-ci.org/twitter/twemproxy)
 
 **twemproxy** (pronounced "two-em-proxy"), aka **nutcracker** is a fast and lightweight proxy for [memcached](http://www.memcached.org/) and [redis](http://redis.io/) protocol. It was primarily built to reduce the connection count on the backend caching servers.
