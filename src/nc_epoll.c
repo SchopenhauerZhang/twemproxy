@@ -21,15 +21,23 @@
 #include <nc_core.h>
 #include <nc_event.h>
 
-int
-event_init(struct context *ctx, int size)
+struct evcenter *
+event_init(int size)
 {
     int status, ep;
     struct epoll_event *event;
+    struct fired_event *fired_events;
+    struct evcenter *center;
 
     ASSERT(ctx->ep < 0);
     ASSERT(ctx->nevent != 0);
     ASSERT(ctx->event == NULL);
+
+    center = nc_zalloc(sizeof(struct evcenter));
+    if (center == NULL) {
+        log_error("center create failed: %s", strerror(errno));
+        return NULL;
+    }
 
     ep = epoll_create(size);
     if (ep < 0) {
@@ -37,38 +45,46 @@ event_init(struct context *ctx, int size)
         return -1;
     }
 
-    event = nc_calloc(ctx->nevent, sizeof(*ctx->event));
-    if (event == NULL) {
+    event = nc_calloc(size, sizeof(struct epoll_event));
+    fired_events = nc_calloc(size, sizeof(struct fired_event));
+    if (event == NULL || fired_events == NULL) {
         status = close(ep);
+        nc_free(center);
+        if (event != NULL)
+            nc_free(event);
+        if (fired_events != NULL)
+            nc_free(fired_events);
         if (status < 0) {
             log_error("close e %d failed, ignored: %s", ep, strerror(errno));
         }
-        return -1;
+        return NULL;
     }
 
-    ctx->ep = ep;
-    ctx->event = event;
+    center->ep = ep;
+    center->event = event;
+    center->nevent = size;
+    center->fired_events = fired_events;
 
-    log_debug(LOG_INFO, "e %d with nevent %d timeout %d", ctx->ep,
-              ctx->nevent, ctx->timeout);
+    log_debug(LOG_INFO, "e %d with nevent %d timeout %d", center->ep,
+              center->nevent, center->timeout);
 
     return 0;
 }
 
 void
-event_deinit(struct context *ctx)
+event_deinit(struct evcenter *center)
 {
     int status;
 
     ASSERT(ctx->ep >= 0);
 
-    nc_free(ctx->event);
+    nc_free(center->event);
 
-    status = close(ctx->ep);
+    status = close(center->ep);
     if (status < 0) {
-        log_error("close e %d failed, ignored: %s", ctx->ep, strerror(errno));
+        log_error("close e %d failed, ignored: %s", center->ep, strerror(errno));
     }
-    ctx->ep = -1;
+    center->ep = -1;
 }
 
 int
@@ -176,36 +192,79 @@ event_del_conn(int ep, struct conn *c)
 }
 
 int
-event_wait(struct context *ctx)
+event_add_raw(int ep, int fd, int mask, void *data)
+{
+    struct epoll_event event;
+
+    ASSERT(ep > 0);
+    ASSERT(c != NULL);
+    ASSERT(c->sd > 0);
+
+    if (mask & AE_READABLE) event.events |= EPOLLIN;
+    if (mask & AE_WRITABLE) event.events |= EPOLLOUT;
+    event.data.u64 = 0; /* avoid valgrind warning */
+    event.data.fd = fd;
+    event.data.ptr = data;
+
+    if (epoll_ctl(ep, EPOLL_CTL_ADD, fd, &event) == -1 && errno != EEXIST) {
+        return -1;
+    }
+    return 0;
+}
+
+int
+event_del_raw(int ep, int fd, int mask, void *data)
+{
+    struct epoll_event event;
+
+    ASSERT(ep > 0);
+
+    event.events = 0;
+    event.data.u64 = 0; /* avoid valgrind warning */
+    event.data.fd = fd;
+    /* Note, Kernel < 2.6.9 requires a non null event pointer even for
+     * EPOLL_CTL_DEL. */
+    if (epoll_ctl(ep, EPOLL_CTL_DEL, fd, &event) == -1
+            && errno != ENOENT && errno != EBADF) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int
+event_wait(struct evcenter *center, int timeout)
 {
     int nsd, numevents, j;
+    struct epoll_event *events = center->event;
 
     ASSERT(ep > 0);
     ASSERT(event != NULL);
     ASSERT(nevent > 0);
 
     for (;;) {
-        nsd = epoll_wait(ctx->ep, ctx->event, ctx->nevent, ctx->timeout);
+        nsd = epoll_wait(center->ep, events, center->nevent, timeout);
         if (nsd > 0) {
             numevents = nsd;
             for (j = 0; j < numevents; j++) {
                 int mask = 0;
-                struct epoll_event *e = ctx->event+j;
+                struct epoll_event *e = events+j;
 
                 if (e->events & EPOLLIN) mask |= EVENT_READABLE;
                 if (e->events & EPOLLOUT) mask |= EVENT_WRITABLE;
                 if (e->events & EPOLLERR) mask |= EVENT_WRITABLE;
                 if (e->events & EPOLLHUP) mask |= EVENT_WRITABLE;
-                ctx->fired_events[j].ptr = e->data.ptr;
-                ctx->fired_events[j].mask = mask;
+                center->fired_events[j].ptr = e->data.ptr;
+                center->fired_events[j].mask = mask;
+                center->fired_events[j].fd = e->data.fd;
             }
 
         }
 
         if (nsd == 0) {
-            if (ctx->timeout == -1) {
+            if (timeout == -1) {
                log_error("epoll wait on e %d with %d events and %d timeout "
-                         "returned no events", ctx->ep, ctx->nevent, ctx->timeout);
+                         "returned no events", center->ep, center->nevent, timeout);
                 return -1;
             }
 
@@ -216,7 +275,7 @@ event_wait(struct context *ctx)
             continue;
         }
 
-        log_error("epoll wait on e %d with %d events failed: %s", ctx->ep, ctx->nevent,
+        log_error("epoll wait on e %d with %d events failed: %s", center->ep, center->nevent,
                   strerror(errno));
 
         return -1;
