@@ -61,8 +61,8 @@ event_init(int size)
     center->nevent = size;
     center->fired_events = fired_events;
 
-    log_debug(LOG_INFO, "e %d with nevent %d timeout %d", center->ep,
-              center->nevent, center->timeout);
+    log_debug(LOG_INFO, "e %d with nevent %d", center->ep,
+              center->nevent);
 
     return center;
 }
@@ -160,14 +160,21 @@ event_add_conn(int ep, struct conn *c)
 int
 event_del_conn(int ep, struct conn *c)
 {
-    int status;
+    int status, mask = 0;
     struct kevent event;
 
     ASSERT(ep > 0);
     ASSERT(c != NULL);
     ASSERT(c->sd > 0);
 
-    status = event_del_raw(ep, c->sd, EVENT_READABLE|EVENT_WRITABLE, c);
+    if (c->recv_active) {
+        mask |= EVENT_READABLE;
+    }
+    if (c->send_active) {
+        mask |= EVENT_WRITABLE;
+    }
+
+    status = event_del_raw(ep, c->sd, mask, c);
     if (status < 0) {
         log_error("kqueue on e %d sd %d failed: %s", ep, c->sd,
                   strerror(errno));
@@ -185,8 +192,7 @@ event_add_raw(int ep, int fd, int mask, void *data)
     struct kevent event;
 
     ASSERT(ep > 0);
-    ASSERT(c != NULL);
-    ASSERT(c->sd > 0);
+    ASSERT(fd > 0);
 
     if (mask & EVENT_READABLE) {
         EV_SET(&event, fd, EVFILT_READ|EV_CLEAR, EV_ADD, 0, 0, data);
@@ -206,6 +212,7 @@ event_del_raw(int ep, int fd, int mask, void *data)
     struct kevent event;
 
     ASSERT(ep > 0);
+    ASSERT(fd > 0);
 
     if (mask & EVENT_READABLE) {
         EV_SET(&event, fd, EVFILT_READ, EV_DELETE, 0, 0, data);
@@ -225,9 +232,9 @@ event_wait(struct evcenter *center, int timeout)
     int nsd, numevents;
     struct kevent *events = center->event;
 
-    ASSERT(ep > 0);
-    ASSERT(event != NULL);
-    ASSERT(nevent > 0);
+    ASSERT(center->ep > 0);
+    ASSERT(events != NULL);
+    ASSERT(center->nevent > 0);
 
     for (;;) {
         if (timeout > 0) {
