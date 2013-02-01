@@ -258,7 +258,7 @@ event_wait(struct evcenter *center, int timeout)
                 center->fired_events[j].mask = mask;
                 center->fired_events[j].fd = e->data.fd;
             }
-
+            return nsd;
         }
 
         if (nsd == 0) {
