@@ -200,8 +200,8 @@ event_add_raw(int ep, int fd, int mask, void *data)
     ASSERT(c != NULL);
     ASSERT(c->sd > 0);
 
-    if (mask & AE_READABLE) event.events |= EPOLLIN;
-    if (mask & AE_WRITABLE) event.events |= EPOLLOUT;
+    if (mask & EVENT_READABLE) event.events |= EPOLLIN;
+    if (mask & EVENT_WRITABLE) event.events |= EPOLLOUT;
     event.data.u64 = 0; /* avoid valgrind warning */
     event.data.fd = fd;
     event.data.ptr = data;
