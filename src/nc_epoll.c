@@ -68,7 +68,7 @@ event_init(int size)
     log_debug(LOG_INFO, "e %d with nevent %d timeout %d", center->ep,
               center->nevent, center->timeout);
 
-    return 0;
+    return center;
 }
 
 void
